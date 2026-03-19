@@ -36,8 +36,11 @@ from core.output import StandardOutput
 
 
 def _get_model() -> str:
-    """Get model from env or default."""
-    return os.environ.get("MODEL", "openai:gpt-4o-mini")
+    """Get model from MODEL env var, or fall back to user_config.yaml default."""
+    if "MODEL" in os.environ:
+        return os.environ["MODEL"]
+    from core.config import AppConfig
+    return AppConfig.from_yaml(PROJECT_ROOT / "user_config.yaml").default_llm
 
 
 def _print_result(result: dict) -> None:

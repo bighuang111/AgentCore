@@ -10,6 +10,22 @@ from langchain_core.messages import AIMessage
 from core.state import BaseState
 
 
+def _extract_content(msg: AIMessage) -> str:
+    """Extract text content from an AIMessage, handling list-type content (Gemini)."""
+    content = msg.content
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for part in content:
+            if isinstance(part, str):
+                parts.append(part)
+            elif isinstance(part, dict) and "text" in part:
+                parts.append(part["text"])
+        return "\n".join(parts)
+    return str(content)
+
+
 class StandardOutput:
     """Standardize agent output into consumable formats."""
 
@@ -21,11 +37,11 @@ class StandardOutput:
         if not ai_messages:
             return "_No output generated._"
 
-        last = ai_messages[-1]
+        last_content = _extract_content(ai_messages[-1])
         lines = [
             f"## Agent Output (Tier: {state.get('current_tier', 'unknown')})",
             "",
-            last.content,
+            last_content,
             "",
             f"---",
             f"_LLM calls: {state.get('llm_call_count', 0)}_",
@@ -38,9 +54,10 @@ class StandardOutput:
         messages = state.get("messages", [])
         ai_messages = [m for m in messages if isinstance(m, AIMessage) and m.content]
 
+        output = _extract_content(ai_messages[-1]) if ai_messages else ""
         return {
             "tier": state.get("current_tier", "unknown"),
-            "output": ai_messages[-1].content if ai_messages else "",
+            "output": output,
             "llm_call_count": state.get("llm_call_count", 0),
             "metadata": state.get("metadata", {}),
         }

@@ -5,9 +5,12 @@ dist/
 build/
 .eggs/
 *.egg
+.env
 .env.local
 .pytest_cache/
 .venv/
 *.db
 user_profile.json
-.claude/
+# .claude — keep skills, ignore user-specific files
+.claude/settings.local.json
+.claude/projects/
