@@ -74,14 +74,8 @@ class TestL1Invocation:
     def test_simple_response(self, mock_llm_simple, monkeypatch):
         """Mock LLM returns text without tool calls -> graph ends."""
         from graphs import l1_reactor
+        monkeypatch.setattr(l1_reactor, "_get_llm", lambda *a, **kw: mock_llm_simple)
 
-        monkeypatch.setattr(
-            l1_reactor, "_llm_call",
-            lambda state: {
-                "messages": [mock_llm_simple.invoke(state["messages"])],
-                "llm_call_count": state.get("llm_call_count", 0) + 1,
-            },
-        )
         graph = build_graph("l1")
         result = graph.invoke({
             "messages": [HumanMessage(content="Hi")],
@@ -94,18 +88,8 @@ class TestL1Invocation:
     def test_tool_call_then_response(self, mock_llm_with_tool_call, monkeypatch):
         """Mock LLM calls echo_tool, then returns final answer."""
         from graphs import l1_reactor
+        monkeypatch.setattr(l1_reactor, "_get_llm", lambda *a, **kw: mock_llm_with_tool_call)
 
-        call_count = {"n": 0}
-
-        def mock_llm_call(state):
-            resp = mock_llm_with_tool_call.invoke(state["messages"])
-            call_count["n"] += 1
-            return {
-                "messages": [resp],
-                "llm_call_count": state.get("llm_call_count", 0) + 1,
-            }
-
-        monkeypatch.setattr(l1_reactor, "_llm_call", mock_llm_call)
         graph = build_graph("l1")
         result = graph.invoke({
             "messages": [HumanMessage(content="Echo test")],
@@ -114,6 +98,4 @@ class TestL1Invocation:
             "current_tier": "l1",
         })
         # Should have called LLM twice (tool call + final)
-        assert call_count["n"] == 2
-        # Should have tool message in history
         assert result["llm_call_count"] == 2

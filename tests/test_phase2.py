@@ -100,20 +100,15 @@ class TestFactoryWithConfig:
     def test_max_loops_truncation(self, monkeypatch):
         """With max_loops=2, graph should stop after 2 LLM calls even if tool calls remain."""
         from graphs import l1_reactor
+        from tests.conftest import MockLLM
 
-        call_count = {"n": 0}
-
-        def always_tool_call(state):
-            call_count["n"] += 1
-            return {
-                "messages": [AIMessage(
-                    content="",
-                    tool_calls=[ToolCall(name="echo_tool", args={"text": "loop"}, id=f"c{call_count['n']}")]
-                )],
-                "llm_call_count": state.get("llm_call_count", 0) + 1,
-            }
-
-        monkeypatch.setattr(l1_reactor, "_llm_call", always_tool_call)
+        # Mock LLM that always returns tool calls
+        always_tool = MockLLM([
+            AIMessage(content="", tool_calls=[ToolCall(name="echo_tool", args={"text": "loop"}, id="c1")]),
+            AIMessage(content="", tool_calls=[ToolCall(name="echo_tool", args={"text": "loop"}, id="c2")]),
+            AIMessage(content="", tool_calls=[ToolCall(name="echo_tool", args={"text": "loop"}, id="c3")]),
+        ])
+        monkeypatch.setattr(l1_reactor, "_get_llm", lambda *a, **kw: always_tool)
 
         config = AppConfig(safety=SafetyConfig(max_loops=2))
         graph = build_graph("l1", config=config)

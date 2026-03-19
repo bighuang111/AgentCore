@@ -19,18 +19,7 @@ class TestL1Integration:
     def test_full_l1_flow_with_tool(self, mock_llm_with_tool_call, monkeypatch):
         """L1: User message → LLM → tool call → LLM → final answer → formatted output."""
         from graphs import l1_reactor
-
-        call_count = {"n": 0}
-
-        def mock_llm_call(state):
-            resp = mock_llm_with_tool_call.invoke(state["messages"])
-            call_count["n"] += 1
-            return {
-                "messages": [resp],
-                "llm_call_count": state.get("llm_call_count", 0) + 1,
-            }
-
-        monkeypatch.setattr(l1_reactor, "_llm_call", mock_llm_call)
+        monkeypatch.setattr(l1_reactor, "_get_llm", lambda *a, **kw: mock_llm_with_tool_call)
 
         config = AppConfig(safety=SafetyConfig(max_loops=10))
         graph = build_graph("l1", config=config)
@@ -42,11 +31,8 @@ class TestL1Integration:
             "current_tier": "l1",
         })
 
-        # Verify flow completed
-        assert call_count["n"] == 2
         assert result["llm_call_count"] == 2
 
-        # Verify StandardOutput
         md = StandardOutput.to_markdown(result)
         assert "echo" in md.lower() or "Echo" in md
         assert "Tier: l1" in md
@@ -57,18 +43,15 @@ class TestL1Integration:
     def test_l1_budget_cutoff(self, monkeypatch):
         """L1: Infinite tool calls should be cut off by BudgetGuard."""
         from graphs import l1_reactor
+        from tests.conftest import MockLLM
 
-        def always_tool(state):
-            n = state.get("llm_call_count", 0)
-            return {
-                "messages": [AIMessage(
-                    content="",
-                    tool_calls=[ToolCall(name="echo_tool", args={"text": "loop"}, id=f"c{n}")]
-                )],
-                "llm_call_count": n + 1,
-            }
-
-        monkeypatch.setattr(l1_reactor, "_llm_call", always_tool)
+        always_tool = MockLLM([
+            AIMessage(content="", tool_calls=[ToolCall(name="echo_tool", args={"text": "loop"}, id="c1")]),
+            AIMessage(content="", tool_calls=[ToolCall(name="echo_tool", args={"text": "loop"}, id="c2")]),
+            AIMessage(content="", tool_calls=[ToolCall(name="echo_tool", args={"text": "loop"}, id="c3")]),
+            AIMessage(content="", tool_calls=[ToolCall(name="echo_tool", args={"text": "loop"}, id="c4")]),
+        ])
+        monkeypatch.setattr(l1_reactor, "_get_llm", lambda *a, **kw: always_tool)
 
         config = AppConfig(safety=SafetyConfig(max_loops=3))
         graph = build_graph("l1", config=config)

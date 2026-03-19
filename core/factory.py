@@ -28,6 +28,7 @@ def build_graph(tier: str = "l1", config: AppConfig | None = None, **kwargs):
         "l1": lambda: build_l1_graph(
             max_loops=config.safety.max_loops,
             tools=tools,
+            model=kwargs.get("model", config.default_llm),
         ),
         "l2": lambda: build_l2_graph(steps=kwargs.get("steps", [])),
         "l3": lambda: build_l3_graph(
