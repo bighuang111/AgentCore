@@ -69,6 +69,58 @@ Parse `$ARGUMENTS` (the user's natural language description) and determine:
 3. **Whether human approval is needed** — sending emails, publishing, payments, etc.
 4. **Whether iteration/quality is needed** — research, writing, optimization loops
 
+## Step 0.5: Environment Setup (MUST DO BEFORE CODING)
+
+Before writing any Agent code, ensure the user's environment is ready. Complete these three sub-steps interactively:
+
+### A. Install Dependencies
+
+The framework requires base + provider-specific packages. Run:
+
+```bash
+# Base dependencies (required)
+pip install -e ".[dev]"
+
+# If the Agent needs extra packages (e.g., requests, beautifulsoup4),
+# install them too and record in workspace/<agent-name>/requirements.txt
+```
+
+If the Agent uses a specific LLM provider, also install the provider package:
+
+| Provider | Install Command |
+|----------|----------------|
+| Google Gemini | `pip install -e ".[google]"` |
+| Anthropic Claude | `pip install -e ".[anthropic]"` |
+| All providers | `pip install -e ".[all-providers]"` |
+| OpenAI (default) | Included in base install |
+
+### B. Configure API Key
+
+Check `.env` in the project root. If the required API key is missing or placeholder, **ask the user to provide it**. Do NOT proceed with coding until at least one valid LLM API key is configured.
+
+Available providers and their env vars:
+
+| Provider | Env Variable | Model Examples |
+|----------|-------------|----------------|
+| OpenAI | `OPENAI_API_KEY` | `gpt-4o`, `gpt-4o-mini`, `o3-mini` |
+| Google Gemini | `GOOGLE_API_KEY` | `google_genai:gemini-2.5-flash`, `google_genai:gemini-2.5-pro` |
+| Anthropic | `ANTHROPIC_API_KEY` | `anthropic:claude-sonnet-4-6`, `anthropic:claude-haiku-4-5-20251001` |
+| DeepSeek | `DEEPSEEK_API_KEY` | `deepseek:deepseek-chat`, `deepseek:deepseek-reasoner` |
+
+If the Agent needs additional service credentials (e.g., `EMAIL_PASSWORD`, `SLACK_TOKEN`), add them to `.env` as well and document them in the Agent's README.
+
+### C. Choose LLM Model
+
+Ask the user which LLM model they want the Agent to use. Default to whatever provider the user already has an API key for. Use the model format `provider:model-name` (e.g., `google_genai:gemini-2.5-flash`).
+
+Write the chosen model into:
+1. `workspace/<agent-name>/config.yaml` → `default_llm` field
+2. The Agent's code where `create_llm()` is called
+
+**Do NOT skip Step 0.5.** An Agent without dependencies or API keys will fail at runtime.
+
+---
+
 ## Step 1: Choose the Orchestration Tier
 
 Use this decision tree:
@@ -376,12 +428,16 @@ plugins/memory/
 
 Before declaring done, verify:
 
+- [ ] **Dependencies installed** — `pip install -e ".[dev]"` + provider extras + agent-specific packages
+- [ ] **API key configured** — at least one LLM provider key in `.env`, plus any service-specific credentials
+- [ ] **LLM model chosen** — user confirmed which model to use, written to config.yaml and code
 - [ ] Agent project created in `workspace/<agent-name>/`
-- [ ] NO files modified outside `workspace/` (shell framework is read-only)
+- [ ] NO files modified outside `workspace/` (shell framework is read-only, except `.env` for credentials)
 - [ ] Tools created in `workspace/<agent-name>/tools/` with clear docstrings
 - [ ] Graph built in `workspace/<agent-name>/graph.py` using correct tier
 - [ ] Config created in `workspace/<agent-name>/config.yaml`
 - [ ] Entry point at `workspace/<agent-name>/main.py` — runnable
 - [ ] Tests in `workspace/<agent-name>/tests/` — passing
-- [ ] README.md with usage instructions
+- [ ] README.md with usage instructions (including required env vars and install steps)
+- [ ] `requirements.txt` lists any extra dependencies beyond the base framework
 - [ ] Smoke test: `python workspace/<agent-name>/main.py` runs without error
