@@ -1,4 +1,4 @@
-default_llm: "openai:gpt-4o-mini"
+default_llm: "google_genai:gemini-3-flash-preview"
 
 safety:
   max_loops: 10

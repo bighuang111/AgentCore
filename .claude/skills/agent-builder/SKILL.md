@@ -26,6 +26,12 @@ workspace/
 └── <agent-name>/              ← One directory per Agent project
     ├── tools/                 ← Agent-specific tools
     │   └── <domain>_tools.py
+    ├── web/                   ← (if web form chosen)
+    │   ├── app.py             ← Flask/FastAPI server
+    │   ├── templates/
+    │   └── static/
+    ├── ui/                    ← (if desktop form chosen)
+    │   └── main_window.py
     ├── graph.py               ← Graph definition (import from core/graphs)
     ├── config.yaml            ← Agent-specific config
     ├── main.py                ← Entry point
@@ -121,6 +127,32 @@ Write the chosen model into:
 
 ---
 
+## Step 0.6: Choose Runtime Form
+
+Ask the user: **"以什么形式运行？"** (What runtime form?)
+
+| Option | Description | Action |
+|--------|-------------|--------|
+| **Terminal** | CLI / command-line (default) | Continue with current flow, `main.py` as entry point |
+| **Web** | Browser-based UI (Flask/FastAPI + frontend) | Invoke `frontend-design` skill for UI design, add `web/` dir to project structure |
+| **Desktop** | Native desktop app (e.g., Electron, Tkinter, PyQt) | Invoke `frontend-design` skill for UI design, add desktop framework deps |
+| **Other** | Custom form — user describes | Adapt based on user description |
+
+### If **web** or **desktop** is selected:
+
+1. Use the `Skill` tool to invoke the `frontend-design` skill, passing the Agent's purpose and required UI elements as context
+2. Add UI-related files to the project structure:
+   - Web: `workspace/<agent-name>/web/` (Flask/FastAPI server, templates, static assets)
+   - Desktop: `workspace/<agent-name>/ui/` (desktop framework files)
+3. Add frontend dependencies to `requirements.txt` (e.g., `flask`, `fastapi[standard]`, `pyqt6`, etc.)
+4. The Agent's `main.py` should start both the backend graph **and** the UI server/app
+
+### If **terminal** is selected:
+
+No change to existing flow — proceed directly to Step 1.
+
+---
+
 ## Step 1: Choose the Orchestration Tier
 
 Use this decision tree:
@@ -191,6 +223,7 @@ def get_<domain>_tools() -> list:
 agent_name: "<agent-name>"
 tier: "l1"  # or "l2" or "l3"
 default_llm: "google_genai:gemini-3-flash-preview"
+runtime_form: "terminal"  # terminal | web | desktop | other
 
 safety:
   max_loops: 10
@@ -431,6 +464,8 @@ Before declaring done, verify:
 - [ ] **Dependencies installed** — `pip install -e ".[dev]"` + provider extras + agent-specific packages
 - [ ] **API key configured** — at least one LLM provider key in `.env`, plus any service-specific credentials
 - [ ] **LLM model chosen** — user confirmed which model to use, written to config.yaml and code
+- [ ] **Runtime form chosen** — user selected terminal/web/desktop/other
+- [ ] If web/desktop: UI designed via `frontend-design` skill and files created
 - [ ] Agent project created in `workspace/<agent-name>/`
 - [ ] NO files modified outside `workspace/` (shell framework is read-only, except `.env` for credentials)
 - [ ] Tools created in `workspace/<agent-name>/tools/` with clear docstrings
