@@ -14,3 +14,6 @@ user_profile.json
 # .claude — keep skills, ignore user-specific files
 .claude/settings.local.json
 .claude/projects/
+# workspace — keep directory, ignore user Agent projects
+workspace/*
+!workspace/.gitkeep

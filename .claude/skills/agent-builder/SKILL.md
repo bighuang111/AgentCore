@@ -11,6 +11,55 @@ You are building an Agent on top of the **Omni-Harness** framework. This project
 
 **Before writing any code**, read this skill completely. Then follow the workflow step by step.
 
+---
+
+## CRITICAL: Project Isolation Rule
+
+**All user Agent code MUST be created inside `workspace/` as an independent project.**
+
+The shell framework (`core/`, `graphs/`, `plugins/`) is READ-ONLY. Never modify files outside `workspace/` when building a user Agent.
+
+### Project structure for each Agent:
+
+```
+workspace/
+└── <agent-name>/              ← One directory per Agent project
+    ├── tools/                 ← Agent-specific tools
+    │   └── <domain>_tools.py
+    ├── graph.py               ← Graph definition (import from core/graphs)
+    ├── config.yaml            ← Agent-specific config
+    ├── main.py                ← Entry point
+    ├── tests/
+    │   └── test_<agent>.py
+    ├── requirements.txt       ← Extra dependencies (if any)
+    └── README.md              ← Usage instructions
+```
+
+### How to import the shell framework:
+
+All workspace projects import from the root package. The entry point `main.py` must add the project root to `sys.path`:
+
+```python
+import sys
+from pathlib import Path
+
+# Add project root so we can import core/, graphs/, plugins/
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
+# Now these work:
+from core.factory import build_graph
+from core.config import AppConfig
+from core.llm import create_llm
+from core.output import StandardOutput
+from graphs.l1_reactor import build_l1_graph
+from graphs.l2_workflow import build_l2_graph
+from graphs.l3_executor import build_l3_graph
+from plugins.tools.registry import ToolRegistry
+```
+
+---
+
 ## Step 0: Understand the Request
 
 Parse `$ARGUMENTS` (the user's natural language description) and determine:
@@ -42,11 +91,18 @@ Needs self-reflection / quality iteration?
 | **L2** | Fixed steps in order, optional human review | Email reply, report generation, data pipeline |
 | **L3** | Open-ended, quality must converge | Deep research, code optimization, brainstorming |
 
-## Step 2: Create Tools
+## Step 2: Create the Agent Project
+
+```bash
+mkdir -p workspace/<agent-name>/tools
+mkdir -p workspace/<agent-name>/tests
+```
+
+## Step 3: Create Tools
 
 For each external capability the Agent needs, create a tool file.
 
-**File location**: `plugins/tools/<domain>_tools.py`
+**File location**: `workspace/<agent-name>/tools/<domain>_tools.py`
 
 **Template**:
 
@@ -75,47 +131,67 @@ def get_<domain>_tools() -> list:
 - Keep tools focused: one tool = one action
 - Handle errors gracefully: return error messages as strings, don't raise
 
-## Step 3: Register Tools
+## Step 4: Create Agent Config
 
-**3a.** Add to the global registry in `plugins/tools/registry.py`:
-
-```python
-# In _populate_defaults(), add:
-from plugins.tools.<domain>_tools import get_<domain>_tools
-_global_registry.register_many(get_<domain>_tools())
-```
-
-**3b.** Enable in `user_config.yaml`:
+**File**: `workspace/<agent-name>/config.yaml`
 
 ```yaml
-enabled_tools:
-  - <tool_name_1>
-  - <tool_name_2>
+agent_name: "<agent-name>"
+tier: "l1"  # or "l2" or "l3"
+default_llm: "google_genai:gemini-3-flash-preview"
+
+safety:
+  max_loops: 10
+  max_tokens: 4096
+
+# L2-specific: SOP steps
+steps:
+  - name: "step_1"
+    type: "action"
+  - name: "step_2"
+    type: "approval"
+  - name: "step_3"
+    type: "action"
+
+# L3-specific: quality control
+quality_threshold: 0.85
+max_iterations: 5
 ```
 
-## Step 4: Build the Graph
+## Step 5: Build the Graph
 
-### For L1 — No extra graph needed
+**File**: `workspace/<agent-name>/graph.py`
 
-L1 uses the built-in ReAct loop. Just register your tools and go:
+### For L1 — ReAct with custom tools
 
 ```python
-from core.factory import build_graph
-from core.config import AppConfig
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-config = AppConfig(
-    enabled_tools=["your_tool_1", "your_tool_2"],
-)
-graph = build_graph("l1", config=config)
+from core.config import AppConfig, SafetyConfig
+from graphs.l1_reactor import build_l1_graph
+from plugins.tools.basic_tools import get_basic_tools
+from tools.<domain>_tools import get_<domain>_tools
+
+
+def build_agent():
+    all_tools = get_basic_tools() + get_<domain>_tools()
+    return build_l1_graph(max_loops=10, tools=all_tools)
+
+
+graph = build_agent()
 ```
 
-### For L2 — Define Steps
-
-Create `graphs/<agent_name>.py`:
+### For L2 — Linear workflow with approval
 
 ```python
-from graphs.l2_workflow import build_l2_graph
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+
 from langgraph.checkpoint.memory import MemorySaver
+from graphs.l2_workflow import build_l2_graph
 
 steps = [
     {"name": "step_1_name", "type": "action"},
@@ -123,84 +199,92 @@ steps = [
     {"name": "step_3_name", "type": "action"},
 ]
 
-graph = build_l2_graph(steps, checkpointer=MemorySaver())
+
+def build_agent():
+    return build_l2_graph(steps, checkpointer=MemorySaver())
+
+
+graph = build_agent()
 ```
 
-For L2, each step node is auto-generated. If you need custom logic per step, override `_make_step_node` or create custom node functions — read `graphs/l2_workflow.py` for the pattern.
-
-### For L3 — Define Custom Node Functions
-
-Create `graphs/<agent_name>.py`:
+### For L3 — Autonomous with reflection
 
 ```python
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+
 from langchain_core.messages import AIMessage
 from graphs.l3_executor import build_l3_graph
 
+
 def my_plan(state):
-    # Planning logic
     return {"messages": [AIMessage(content="Plan: ...")]}
 
 def my_execute(state):
-    # Execution logic — call tools, do work
     return {
         "messages": [AIMessage(content="Executed: ...")],
         "iteration_count": state.get("iteration_count", 0) + 1,
     }
 
 def my_evaluate(state):
-    # Evaluate quality
     score = ...  # 0.0 to 1.0
     return {
         "messages": [AIMessage(content=f"Quality: {score}")],
         "quality_score": score,
     }
 
-graph = build_l3_graph(
-    quality_threshold=0.85,
-    max_iterations=5,
-    plan_fn=my_plan,
-    execute_fn=my_execute,
-    evaluate_fn=my_evaluate,
-)
+
+def build_agent():
+    return build_l3_graph(
+        quality_threshold=0.85,
+        max_iterations=5,
+        plan_fn=my_plan,
+        execute_fn=my_execute,
+        evaluate_fn=my_evaluate,
+    )
+
+
+graph = build_agent()
 ```
 
-## Step 5: Create an Entry Point
+## Step 6: Create Entry Point
 
-Create `examples/<agent_name>.py`:
+**File**: `workspace/<agent-name>/main.py`
 
 ```python
 """<Agent Name>: <one-line description>.
 
 Usage:
-    python examples/<agent_name>.py
+    python workspace/<agent-name>/main.py
 """
 
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+# Also add the agent's own directory for local tool imports
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(PROJECT_ROOT / ".env")
 
 from langchain_core.messages import HumanMessage
-from core.config import AppConfig
-from core.factory import build_graph
 from core.output import StandardOutput
+from graph import build_agent
 
 
 def main():
-    config = AppConfig(
-        enabled_tools=[...],
-    )
-    graph = build_graph("<tier>", config=config)
+    graph = build_agent()
 
     result = graph.invoke({
-        "messages": [HumanMessage(content="<initial prompt>")],
+        "messages": [HumanMessage(content="<initial prompt or user input>")],
         "metadata": {},
         "llm_call_count": 0,
         "current_tier": "<tier>",
-        # Add tier-specific fields (see below)
+        # L2 extra: "current_step": "", "approval_status": "", "artifacts": {},
+        # L3 extra: "iteration_count": 0, "reflection_log": [], "quality_score": 0.0, "is_complete": False,
     })
 
     print(StandardOutput.to_markdown(result))
@@ -210,53 +294,57 @@ if __name__ == "__main__":
     main()
 ```
 
-**Tier-specific initial state fields**:
+## Step 7: Write Tests
 
-- **L1**: No extra fields needed
-- **L2**: Add `"current_step": "", "approval_status": "", "artifacts": {}`
-- **L3**: Add `"iteration_count": 0, "reflection_log": [], "quality_score": 0.0, "is_complete": False`
-
-## Step 6: Write Tests
-
-Create `tests/test_<agent_name>.py`:
+**File**: `workspace/<agent-name>/tests/test_<agent>.py`
 
 ```python
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from tests.conftest import MockLLM
 from langchain_core.messages import AIMessage, HumanMessage
 
-class TestMyAgent:
-    def test_tools_work(self):
+
+class TestMyAgentTools:
+    def test_tool_works(self):
         """Test each tool individually."""
-        from plugins.tools.<domain>_tools import <tool>
+        from tools.<domain>_tools import <tool>
         result = <tool>.invoke({...})
         assert "expected" in result
 
-    def test_graph_runs(self, monkeypatch):
-        """Test the full graph with mock LLM."""
-        from graphs import l1_reactor
-        mock = MockLLM([AIMessage(content="Mock response")])
-        monkeypatch.setattr(l1_reactor, "_get_llm", lambda *a, **kw: mock)
-        # ... invoke and assert
+
+class TestMyAgentGraph:
+    def test_graph_builds(self):
+        """Test the graph compiles without error."""
+        from graph import build_agent
+        graph = build_agent()
+        assert graph is not None
 ```
 
-Then run: `pytest tests/test_<agent_name>.py -v`
+Run from project root:
 
-## Step 7: Register in langgraph.json (Optional)
-
-If you want the Agent visible in LangGraph Studio:
-
-```json
-{
-  "graphs": {
-    "l1_reactor": "./core/factory.py:l1_graph",
-    "l2_workflow": "./core/factory.py:l2_graph",
-    "l3_executor": "./core/factory.py:l3_graph",
-    "my_agent": "./graphs/<agent_name>.py:graph"
-  }
-}
+```bash
+python -m pytest workspace/<agent-name>/tests/ -v
 ```
 
-## Architecture Reference
+## Step 8: Create README
+
+**File**: `workspace/<agent-name>/README.md`
+
+Briefly describe:
+- What the Agent does
+- How to run it
+- What API keys / services are needed
+- Example usage
+
+---
+
+## Architecture Reference (READ-ONLY — do not modify)
 
 ```
 core/
@@ -288,10 +376,12 @@ plugins/memory/
 
 Before declaring done, verify:
 
-- [ ] Tools created in `plugins/tools/` with clear docstrings
-- [ ] Tools registered in `registry.py` `_populate_defaults()`
-- [ ] Tools enabled in `user_config.yaml`
-- [ ] Graph built using correct tier (L1/L2/L3)
-- [ ] Entry point script in `examples/`
-- [ ] Tests pass: `pytest tests/test_<agent_name>.py -v`
-- [ ] Full regression: `pytest tests/ -v` (all existing tests still pass)
+- [ ] Agent project created in `workspace/<agent-name>/`
+- [ ] NO files modified outside `workspace/` (shell framework is read-only)
+- [ ] Tools created in `workspace/<agent-name>/tools/` with clear docstrings
+- [ ] Graph built in `workspace/<agent-name>/graph.py` using correct tier
+- [ ] Config created in `workspace/<agent-name>/config.yaml`
+- [ ] Entry point at `workspace/<agent-name>/main.py` — runnable
+- [ ] Tests in `workspace/<agent-name>/tests/` — passing
+- [ ] README.md with usage instructions
+- [ ] Smoke test: `python workspace/<agent-name>/main.py` runs without error
