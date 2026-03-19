@@ -1,0 +1,12 @@
+default_llm: "openai:gpt-4o-mini"
+
+safety:
+  max_loops: 10
+  max_tokens: 4096
+
+enabled_tiers:
+  - l1
+
+enabled_tools:
+  - echo_tool
+  - current_time

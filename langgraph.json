@@ -1,0 +1,10 @@
+{
+  "dependencies": [".", "langchain_openai"],
+  "graphs": {
+    "l1_reactor": "./core/factory.py:l1_graph",
+    "l2_workflow": "./core/factory.py:l2_graph",
+    "l3_executor": "./core/factory.py:l3_graph"
+  },
+  "env": "./.env",
+  "python_version": "3.12"
+}
